@@ -10,8 +10,8 @@ const STORAGE_KEYS = {
 export const InventoryStorage = {
   /**
    * Loads the inventory from AsyncStorage.
-   * On the very first launch (when SEED_INITIALIZED is not set), populates
-   * and saves the Swiss Emergency Plan seed data. Never overwrites existing user data.
+   * Cleans out any legacy demo/seed items so that only user-added items are kept.
+   * If no inventory exists, initializes with an empty list.
    */
   async loadInventory(): Promise<InventoryItem[]> {
     try {
@@ -23,73 +23,33 @@ export const InventoryStorage = {
       if (rawItems !== null) {
         let parsed = JSON.parse(rawItems);
         if (Array.isArray(parsed)) {
-          const seedMap = new Map(
-            INITIAL_EMERGENCY_INVENTORY.map(i => [i.id, i]),
+          // Remove any demo/seed items so only original user-added items remain
+          const userItems = parsed.filter(
+            (item: InventoryItem) => !item.id?.startsWith('swiss-emergency-'),
           );
 
-          // Enrich existing items that lack metadata with full seed metadata
-          let hasChanges = false;
-          parsed = parsed.map((item: InventoryItem) => {
-            const seed = seedMap.get(item.id);
-            if (
-              seed &&
-              (!item.location || !item.expiryDate || !item.notes) &&
-              (seed.location || seed.expiryDate || seed.notes)
-            ) {
-              hasChanges = true;
-              return {
-                ...item,
-                location: item.location || seed.location,
-                expiryDate: item.expiryDate || seed.expiryDate,
-                notes: item.notes || seed.notes,
-                checked: item.checked !== undefined ? item.checked : seed.checked,
-              };
-            }
-            return item;
-          });
-
-          // Ensure Beverages has both Swiss Emergency items if one was missing
-          const existingIds = new Set(parsed.map((i: InventoryItem) => i.id));
-          const beverageItems = parsed.filter(
-            (i: InventoryItem) => i.category === 'Beverages',
-          );
-          if (beverageItems.length < 2 && !existingIds.has('swiss-emergency-01')) {
-            const waterSeed = seedMap.get('swiss-emergency-01');
-            if (waterSeed) {
-              hasChanges = true;
-              parsed.unshift(waterSeed);
-            }
-          }
-
-          if (hasChanges) {
+          if (userItems.length !== parsed.length) {
             await AsyncStorage.setItem(
               STORAGE_KEYS.INVENTORY_ITEMS,
-              JSON.stringify(parsed),
+              JSON.stringify(userItems),
             );
           }
 
           if (!isSeeded) {
             await AsyncStorage.setItem(STORAGE_KEYS.SEED_INITIALIZED, 'true');
           }
-          return parsed as InventoryItem[];
+          return userItems as InventoryItem[];
         }
       }
 
-      if (!isSeeded) {
-        await Promise.all([
-          AsyncStorage.setItem(
-            STORAGE_KEYS.INVENTORY_ITEMS,
-            JSON.stringify(INITIAL_EMERGENCY_INVENTORY),
-          ),
-          AsyncStorage.setItem(STORAGE_KEYS.SEED_INITIALIZED, 'true'),
-        ]);
-        return INITIAL_EMERGENCY_INVENTORY;
-      }
-
+      await Promise.all([
+        AsyncStorage.setItem(STORAGE_KEYS.INVENTORY_ITEMS, JSON.stringify([])),
+        AsyncStorage.setItem(STORAGE_KEYS.SEED_INITIALIZED, 'true'),
+      ]);
       return [];
     } catch (error) {
       console.error('Failed to load inventory from AsyncStorage:', error);
-      return INITIAL_EMERGENCY_INVENTORY;
+      return [];
     }
   },
 
@@ -104,6 +64,20 @@ export const InventoryStorage = {
       );
     } catch (error) {
       console.error('Failed to save inventory to AsyncStorage:', error);
+    }
+  },
+
+  /**
+   * Clears all items in the inventory.
+   */
+  async clearInventory(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.INVENTORY_ITEMS,
+        JSON.stringify([]),
+      );
+    } catch (error) {
+      console.error('Failed to clear inventory in AsyncStorage:', error);
     }
   },
 

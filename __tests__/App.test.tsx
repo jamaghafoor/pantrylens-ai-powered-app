@@ -79,9 +79,9 @@ describe('PantryLens Core Suite', () => {
     expect(fullMetadataSupplies.length).toBeGreaterThanOrEqual(2);
   });
 
-  test('InventoryStorage seeds on first launch and preserves user modifications on restart', async () => {
+  test('InventoryStorage initializes empty on first launch and preserves user modifications on restart', async () => {
     const initial = await InventoryStorage.loadInventory();
-    expect(initial).toHaveLength(24);
+    expect(initial).toHaveLength(0);
 
     const modified = [
       {
@@ -94,7 +94,9 @@ describe('PantryLens Core Suite', () => {
         checked: true,
       },
       {
-        ...initial[0],
+        id: 'custom-test-2',
+        name: 'Mineral Water',
+        category: 'Beverages' as const,
         checked: true,
         location: 'Basement rack 1',
         expiryDate: '2027-12-01',
@@ -413,22 +415,59 @@ describe('Phase 2: OpenRouter AI Recognition & Scenarios 1–7', () => {
   });
 
   test('Scenario 6: Application restart -> updated checked states from AI recognition persist in AsyncStorage', async () => {
-    const initial = await InventoryStorage.loadInventory();
+    const initial = [
+      {
+        id: 'custom-01',
+        name: 'Mineral Water',
+        category: 'Beverages' as const,
+        location: 'Basement Pantry',
+        expiryDate: '2028-10-15',
+        notes: '6x 1.5L bottles',
+        checked: false,
+      },
+      {
+        id: 'custom-02',
+        name: 'Rice',
+        category: 'Food' as const,
+        location: 'Pantry Shelf 2',
+        expiryDate: '2028-04-20',
+        notes: '2kg Basmati',
+        checked: false,
+      },
+      {
+        id: 'custom-03',
+        name: 'Chocolate',
+        category: 'Food' as const,
+        location: 'Cupboard',
+        expiryDate: '2027-01-01',
+        notes: 'Dark chocolate',
+        checked: false,
+      },
+      {
+        id: 'custom-04',
+        name: 'Flashlight',
+        category: 'Additional supplies' as const,
+        location: 'Drawer',
+        expiryDate: null,
+        notes: '',
+        checked: false,
+      },
+    ];
+    await InventoryStorage.saveInventory(initial);
+
     const updated = applyRecognizedIdsToInventory(initial, [
-      'swiss-emergency-01',
-      'swiss-emergency-03',
-      'swiss-emergency-15',
+      'custom-01',
+      'custom-02',
     ]);
     await InventoryStorage.saveInventory(updated);
 
     // Simulate application restart by reloading from AsyncStorage
     const afterRestart = await InventoryStorage.loadInventory();
     expect(afterRestart.filter(i => i.checked).map(i => i.id)).toEqual([
-      'swiss-emergency-01',
-      'swiss-emergency-03',
-      'swiss-emergency-15',
+      'custom-01',
+      'custom-02',
     ]);
-    expect(afterRestart.filter(i => !i.checked)).toHaveLength(21);
+    expect(afterRestart.filter(i => !i.checked)).toHaveLength(2);
   });
 
   test('Scenario 7: Rapid duplicate invocation guard -> synchronous lock ensures only 1 request executes', async () => {

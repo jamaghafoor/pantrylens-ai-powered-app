@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
+  Keyboard,
+  KeyboardEvent,
   Modal,
   Platform,
   Pressable,
@@ -10,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -46,6 +48,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   onClose,
   onSubmit,
 }) => {
+  const { height: windowHeight } = useWindowDimensions();
   const [name, setName] = useState<string>('');
   const [category, setCategory] = useState<InventoryCategory>(defaultCategory);
   const [location, setLocation] = useState<string>('');
@@ -53,6 +56,35 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+  const scrollViewRef = useRef<any>(null);
+  const isKeyboardVisible = keyboardHeight > 0;
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e: KeyboardEvent) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+    }
+  }, [visible]);
 
   useEffect(() => {
     if (visible) {
@@ -73,6 +105,18 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
       setShowDatePicker(false);
     }
   }, [visible, editingItem, defaultCategory]);
+
+  const handleFocusField = (field: 'name' | 'location' | 'notes') => {
+    setTimeout(() => {
+      if (field === 'name') {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      } else if (field === 'location') {
+        scrollViewRef.current?.scrollTo({ y: 120, animated: true });
+      } else if (field === 'notes') {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }
+    }, 120);
+  };
 
   const handleDateChange = (
     event: DateTimePickerEvent,
@@ -103,18 +147,35 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     onClose();
   };
 
+  // Dynamically calculate the maximum bottom sheet height so it never exceeds visible screen space above keyboard
+  const maxSheetHeight = isKeyboardVisible
+    ? Math.max(280, windowHeight - keyboardHeight - (Platform.OS === 'android' ? 28 : 50))
+    : Math.round(windowHeight * 0.88);
+
   return (
     <Modal
       visible={visible}
       transparent
       animationType="slide"
+      statusBarTranslucent
       onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
+      <View
+        style={[
+          styles.overlay,
+          isKeyboardVisible ? { paddingBottom: keyboardHeight } : null,
+        ]}>
+        <Pressable
+          style={styles.backdrop}
+          onPress={() => {
+            if (isKeyboardVisible) {
+              Keyboard.dismiss();
+            } else {
+              onClose();
+            }
+          }}
+        />
 
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { maxHeight: maxSheetHeight }]}>
           <View style={styles.sheetHandle} />
 
           {/* Header */}
@@ -128,9 +189,12 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
           </View>
 
           <ScrollView
+            ref={scrollViewRef}
             style={styles.formScroll}
+            contentContainerStyle={styles.formScrollContent}
             showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled">
+            keyboardShouldPersistTaps="handled"
+            bounces={false}>
             {/* 1. Item Name (Required) */}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>
@@ -144,6 +208,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 placeholder="e.g., Bottled mineral water (9L)"
                 placeholderTextColor={Colors.textMuted}
                 value={name}
+                onFocus={() => handleFocusField('name')}
                 onChangeText={text => {
                   setName(text);
                   if (errors.name) {
@@ -171,7 +236,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                         styles.categoryOption,
                         selected ? styles.categoryOptionSelected : null,
                       ]}
-                      onPress={() => setCategory(cat)}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setCategory(cat);
+                      }}
                       activeOpacity={0.8}>
                       <Text
                         style={[
@@ -197,6 +265,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 placeholder="e.g., Basement shelf B, Kitchen pantry"
                 placeholderTextColor={Colors.textMuted}
                 value={location}
+                onFocus={() => handleFocusField('location')}
                 onChangeText={text => {
                   setLocation(text);
                   if (errors.location) {
@@ -217,7 +286,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               <View style={styles.dateRow}>
                 <TouchableOpacity
                   style={styles.datePickerButton}
-                  onPress={() => setShowDatePicker(true)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setShowDatePicker(true);
+                  }}
                   activeOpacity={0.8}
                   testID="button-open-datepicker">
                   <Text style={styles.dateIcon}>📅</Text>
@@ -264,6 +336,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 placeholder="Add quantity details, rotation reminders, or special instructions..."
                 placeholderTextColor={Colors.textMuted}
                 value={notes}
+                onFocus={() => handleFocusField('notes')}
                 onChangeText={text => {
                   setNotes(text);
                   if (errors.notes) {
@@ -302,7 +375,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };
@@ -322,8 +395,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: BorderRadius.xl,
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.xxl,
-    maxHeight: '90%',
+    paddingBottom: Spacing.xl,
     ...Shadows.floating,
   },
   sheetHandle: {
@@ -338,7 +410,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   sheetTitle: {
     fontFamily: Fonts.bold,
@@ -361,7 +433,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   formScroll: {
-    marginBottom: Spacing.md,
+    flexShrink: 1,
+    marginBottom: Spacing.xs,
+  },
+  formScrollContent: {
+    paddingBottom: Spacing.md,
   },
   fieldGroup: {
     marginBottom: Spacing.lg,

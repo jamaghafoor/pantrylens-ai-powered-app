@@ -192,6 +192,11 @@ export function useInventoryState() {
     setItems(defaultItems);
   }, []);
 
+  const clearAllItems = useCallback(async () => {
+    await InventoryStorage.clearInventory();
+    setItems([]);
+  }, []);
+
   return {
     items,
     isLoading,
@@ -203,5 +208,6 @@ export function useInventoryState() {
     applyRecognizedItems,
     persistItems,
     resetToDefault,
+    clearAllItems,
   };
 }

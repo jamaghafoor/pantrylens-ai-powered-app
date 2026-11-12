@@ -1,106 +1,44 @@
-# AI Usage & OpenRouter Vision Integration (`AI_USAGE.md`)
+# PantryLens AI Usage Statement
 
-## 1. Runtime AI Provider & Endpoint
+**Prepared:** 8 November 2026  
+**Project:** PantryLens
 
-PantryLens integrates directly with **OpenRouter** from the React Native mobile client using the standard OpenRouter Chat Completions API:
+## Statement for milestone acceptance
 
-- **Provider**: [OpenRouter](https://openrouter.ai/)
-- **Endpoint**: `POST https://openrouter.ai/api/v1/chat/completions`
-- **Service Implementation**: [`src/services/openRouterService.ts`](./src/services/openRouterService.ts)
-- **Environment Configuration**: [`src/config/env.ts`](./src/config/env.ts) & [`babel.config.js`](./babel.config.js)
+AI tools were used during PantryLens development and documentation. The development models reported by the project owner were **Gemini Argon 4** and **Claude Opus 5**. The application also uses **Qwen3-VL-8B-Instruct (`qwen/qwen3-vl-8b-instruct`)**, accessed through **OpenRouter**, to identify pantry items in user-submitted photos. AI suggestions supported development; project decisions, code changes, and acceptance remain subject to human review.
 
-### Environment Variables (`.env`)
+This statement records the tools and application behavior identified from the repository and information provided by the project owner. It does not claim that AI generated every part of the project.
 
-Credentials and model selection are configured through the project's `.env` file and injected at bundle time via `babel.config.js` (`inlineDotEnvPlugin`):
+## AI tools and models
 
-```dotenv
-OPENROUTER_API_KEY=your_api_key
-OPENROUTER_MODEL=qwen/qwen3-vl-8b-instruct
-```
+| Use | Tool or model | How it was used / is used | Record details |
+| --- | --- | --- | --- |
+| Development assistance | Gemini Argon 4 | Used to help build PantryLens, as reported by the project owner. | Dates of use were not recorded. |
+| Development assistance | Claude Opus 5 | Used to help build PantryLens, as reported by the project owner. | Dates of use were not recorded. |
+| In-app photo recognition | Qwen3-VL-8B-Instruct, model ID `qwen/qwen3-vl-8b-instruct`, through OpenRouter | Compares a pantry photo with the current inventory checklist and returns IDs for items it recognizes. | The app reads `OPENROUTER_MODEL`; the code default is this model ID. Actual requests use the configured model value. |
 
-> **Security Note (Proof-of-Concept)**:
-> Because PantryLens calls OpenRouter directly from the mobile application without an intermediate backend or proxy, the API key is bundled into the client application and could be extracted from a compiled APK. This architecture is intended strictly for a limited-budget proof-of-concept and should not be treated as production-secure. The application redacts the API key from all error messages and never logs it.
+## How the in-app AI feature works
 
----
+1. A user captures a pantry photo and explicitly selects **Identify Items**.
+2. The app resizes the image so its longest side is at most 768 pixels, encodes it as JPEG at quality 72, and prepares it as a base64 data URL.
+3. The app sends the image and the current checklist's item IDs and names to OpenRouter's Chat Completions endpoint (`POST https://openrouter.ai/api/v1/chat/completions`). The request includes instructions to identify only clearly visible items from that checklist.
+4. The model is asked to return a strict JSON object containing `foundItemIds`. The app validates the response and rejects malformed output or IDs that are not in the current checklist.
+5. If validation succeeds, matched items are marked stocked and unmatched items are marked not stocked. If the request or validation fails, the app keeps the inventory unchanged.
 
-## 2. Configured Vision Model (`OPENROUTER_MODEL`)
+The image processing and request flow are implemented in [`src/screens/ScanScreen.tsx`](src/screens/ScanScreen.tsx), [`src/utils/imageProcessor.ts`](src/utils/imageProcessor.ts), [`src/services/openRouterService.ts`](src/services/openRouterService.ts), and [`src/config/env.ts`](src/config/env.ts).
 
-- **Default / Configured Model**: `qwen/qwen3-vl-8b-instruct`
-- **Verification**: Queried against OpenRouter's live `/api/v1/models` catalog and verified to support both:
-  1. **Multimodal image input**: `architecture.input_modalities` includes `"image"` and `"text"`.
-  2. **JSON Schema Structured Outputs**: `supported_parameters` includes `"response_format"` and `"structured_outputs"`.
-- **Cost Efficiency**: Low-cost open-weight vision-language model ($0.25 / 1M input tokens, $0.75 / 1M output tokens), ideal for operating within a strict $5 API budget.
-- **Configurability**: Changing `OPENROUTER_MODEL` in `.env` switches the active vision model without code changes.
+## Data sent to the service
 
----
+For an identification request, the app sends the processed pantry photo and each current inventory item's ID and name to OpenRouter. The request code does not include the inventory item's category, storage location, expiry date, notes, or checked state in the recognition checklist. The recognition call is made only after the user initiates identification.
 
-## 3. Image Recognition Workflow
+The repository confirms the app-to-OpenRouter request, but does not establish OpenRouter's or any upstream model provider's retention, training, or deletion practices. Those practices should be checked against the applicable provider terms and account settings before making separate privacy claims.
 
-1. **Photo Capture (`ScanScreen.tsx`)**:
-   - The user opens the **Scan** tab, frames their pantry supplies, and taps the shutter button to capture a photo using `react-native-vision-camera`.
-   - Capturing a photo **never** triggers an automatic API request; the user first reviews the captured photo preview.
-2. **Client-Side Compression & Base64 Encoding (`src/utils/imageProcessor.ts`)**:
-   - When the user explicitly taps **"Identify Items"**, the captured image is loaded via `react-native-nitro-image` (`Images.loadFromFileAsync`).
-   - If either dimension exceeds `768px`, the image is proportionally resized so the longest edge is `768px` (`resizeAsync`).
-   - The resized image is compressed to JPEG (`quality: 72`) via `toEncodedImageDataAsync('jpg', 72)` and encoded into a base64 data URL (`data:image/jpeg;base64,...`).
-   - This keeps payload sizes small (~40–90 KB) and minimizes token usage.
-3. **OpenRouter Multimodal Request (`src/services/openRouterService.ts`)**:
-   - Retrieves the current inventory from application state (`InventoryContext`) and maps each item to `{ id, name }`.
-   - Sends the system/user recognition instruction, the JSON-serialized inventory list (`id` and `name`), and the `image_url` data URL in a single `POST` request to `https://openrouter.ai/api/v1/chat/completions`.
-   - Duplicate simultaneous requests are blocked via both React state and a synchronous `useRef` lock (`isIdentifyingRef`).
-4. **Validation & Checklist Synchronization (`src/hooks/useInventory.ts`)**:
-   - The response is parsed and strictly validated (`validateAndNormalizeRecognitionResponse`):
-     - Must be a valid JSON object containing only `foundItemIds: string[]`.
-     - Every returned ID must exist in the current inventory checklist; any unknown ID or malformed payload is rejected immediately.
-     - Duplicate IDs are deduplicated while preserving order.
-   - Only after validation succeeds does `applyRecognizedItems` update the inventory:
-     - Items whose IDs appear in `foundItemIds` are marked `checked: true`.
-     - All other inventory items are marked `checked: false`.
-     - All item names, IDs, categories, storage locations, expiry dates, notes, and custom drag-and-drop ordering are preserved and persisted to `AsyncStorage`.
-   - If any network, API, or validation error occurs, the existing inventory remains completely untouched and a themed error message is shown.
+## Configuration and security note
 
----
+The model can be configured with `OPENROUTER_MODEL`; if it is unset, the app defaults to `qwen/qwen3-vl-8b-instruct`. The OpenRouter API key is read from `OPENROUTER_API_KEY`. Babel inlines these values during bundling, and the app calls OpenRouter directly from the mobile client without a backend proxy. Therefore, a key included in a distributed app bundle should be treated as extractable. The `.env` file is ignored by Git; do not place a real key in this document or commit it to the repository.
 
-## 4. Structured JSON Outputs (`response_format`)
+## Review and limitations
 
-Every recognition request enforces OpenRouter Structured Outputs using `response_format` with `strict: true`:
+AI-generated development suggestions and photo recognition can be wrong. The recognition flow limits matches to existing checklist entries and validates returned IDs, but these checks do not prove that a visual identification is correct. A person remains responsible for reviewing the inventory and all milestone submissions.
 
-```json
-{
-  "type": "json_schema",
-  "json_schema": {
-    "name": "pantry_recognition",
-    "strict": true,
-    "schema": {
-      "type": "object",
-      "properties": {
-        "foundItemIds": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": ["foundItemIds"],
-      "additionalProperties": false
-    }
-  }
-}
-```
-
-Expected model output:
-
-```json
-{
-  "foundItemIds": [
-    "item-001",
-    "item-002"
-  ]
-}
-```
-
----
-
-## 5. AI Coding Tools & Models Used During Development
-
-- **AI Coding Assistant**: Google DeepMind **Antigravity** agentic coding assistant (pair-programming environment used to architect, implement, test, and verify Phase 1 and Phase 2 of PantryLens).
+This document was prepared from the repository and the project owner's account of development tool use. The dates and contribution breakdown for those sessions were not available in the project files and are left unspecified rather than inferred.

@@ -32,7 +32,7 @@ export const PantryScreen: React.FC = () => {
     toggleItemChecked,
     deleteItem,
     reorderItems,
-    resetToDefault,
+    clearAllItems,
   } = useInventory();
 
   const [selectedCategory, setSelectedCategory] =
@@ -43,6 +43,8 @@ export const PantryScreen: React.FC = () => {
   const [isFormModalVisible, setIsFormModalVisible] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
+  const [isClearAllModalVisible, setIsClearAllModalVisible] =
+    useState<boolean>(false);
 
   const filteredItems = useMemo(() => {
     if (selectedCategory === 'All') {
@@ -152,6 +154,23 @@ export const PantryScreen: React.FC = () => {
         items={items}
       />
 
+      {items.length > 0 ? (
+        <View style={styles.listHeaderRow}>
+          <Text style={styles.listHeaderTitle}>
+            {selectedCategory === 'All'
+              ? `ALL ITEMS (${filteredItems.length})`
+              : `${selectedCategory.toUpperCase()} (${filteredItems.length})`}
+          </Text>
+          <TouchableOpacity
+            onPress={() => setIsClearAllModalVisible(true)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Clear all pantry items">
+            <Text style={styles.clearAllText}>Clear All</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       <View style={styles.listWrapper}>
         {filteredItems.length === 0 ? (
           <EmptyState
@@ -162,23 +181,19 @@ export const PantryScreen: React.FC = () => {
             }
             description={
               items.length === 0
-                ? 'Start adding emergency supplies or restore the recommended Swiss Emergency Plan checklist.'
+                ? 'Start adding items to your pantry manually using the "＋ Add Supply Item" button below.'
                 : 'Add a new item to this category or switch back to "All" to see your complete inventory.'
             }
             actionLabel="＋ Add Supply Item"
             onActionPress={handleOpenAddModal}
             secondaryActionLabel={
-              items.length === 0
-                ? 'Restore Swiss Emergency Checklist'
-                : 'Show All Categories'
+              items.length === 0 ? undefined : 'Show All Categories'
             }
-            onSecondaryActionPress={() => {
-              if (items.length === 0) {
-                resetToDefault();
-              } else {
-                setSelectedCategory('All');
-              }
-            }}
+            onSecondaryActionPress={
+              items.length === 0
+                ? undefined
+                : () => setSelectedCategory('All')
+            }
           />
         ) : (
           <DragList
@@ -221,6 +236,20 @@ export const PantryScreen: React.FC = () => {
         onCancel={handleCancelDelete}
       />
 
+      {/* App-Themed Confirm Clear All Modal */}
+      <ConfirmDeleteModal
+        visible={isClearAllModalVisible}
+        title="Clear All Pantry Items"
+        description="Are you sure you want to remove all items from your pantry? This action cannot be undone."
+        confirmLabel="Clear All"
+        onConfirm={async () => {
+          await clearAllItems();
+          setIsClearAllModalVisible(false);
+          setSelectedItemId(null);
+        }}
+        onCancel={() => setIsClearAllModalVisible(false)}
+      />
+
       {/* Add / Edit Item Form Modal */}
       <ItemFormModal
         visible={isFormModalVisible}
@@ -255,6 +284,25 @@ const styles = StyleSheet.create({
   },
   listWrapper: {
     flex: 1,
+  },
+  listHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xs,
+    paddingBottom: Spacing.xs,
+  },
+  listHeaderTitle: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    color: Colors.textSecondary,
+  },
+  clearAllText: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 12,
+    color: Colors.danger,
   },
   listContent: {
     paddingTop: Spacing.xs,

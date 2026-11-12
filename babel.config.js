@@ -29,7 +29,7 @@ function loadDotEnv() {
 }
 
 function inlineDotEnvPlugin({ types: t }) {
-  const allowedKeys = new Set(['OPENROUTER_API_KEY', 'OPENROUTER_MODEL']);
+  const defaultAllowedKeys = new Set(['OPENROUTER_API_KEY', 'OPENROUTER_MODEL']);
 
   return {
     name: 'inline-dotenv-openrouter',
@@ -42,8 +42,11 @@ function inlineDotEnvPlugin({ types: t }) {
           t.isIdentifier(nodePath.node.property)
         ) {
           const key = nodePath.node.property.name;
-          if (allowedKeys.has(key)) {
-            const envVars = loadDotEnv();
+          const envVars = loadDotEnv();
+          if (
+            defaultAllowedKeys.has(key) ||
+            Object.prototype.hasOwnProperty.call(envVars, key)
+          ) {
             const val =
               envVars[key] !== undefined
                 ? envVars[key]
